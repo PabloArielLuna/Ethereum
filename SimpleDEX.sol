@@ -13,116 +13,143 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Defining the SimpleDEX contract, a decentralized exchange (DEX) for swapping two ERC20 tokens.
 contract SimpleDEX {
-    // Declaring public variables for the two tokens, the owner, and the reserves of each token.
-    IERC20 public tokenA; // The first token supported by the DEX.
-    IERC20 public tokenB; // The second token supported by the DEX.
-    address public owner; // The address of the contract owner.
-    uint256 public reserveA; // Reserve amount of token A in the pool.
-    uint256 public reserveB; // Reserve amount of token B in the pool.
+    /// @notice ERC20 token contract instances for the tokens in the DEX pool.
+    IERC20 public tokenA; 
+    IERC20 public tokenB; 
 
-    // Defining events for logging significant actions within the contract.
-    event LiquidityAdded(uint256 amountA, uint256 amountB); // Emitted when liquidity is added to the pool.
-    event LiquidityRemoved(uint256 amountA, uint256 amountB); // Emitted when liquidity is removed from the pool.
-    event TokensSwapped(address indexed user, uint256 amountIn, uint256 amountOut, string direction); // Emitted when a token swap occurs.
+    /// @notice Owner of the contract, allowed to add/remove liquidity.
+    address public owner; 
 
-    // Constructor function to initialize the contract with the addresses of the two tokens and set the contract owner.
+    /// @notice Reserve balances for each token in the liquidity pool.
+    uint256 public reserveA; 
+    uint256 public reserveB; 
+
+    /// @notice Emitted when liquidity is added to the pool.
+    event LiquidityAdded(uint256 amountA, uint256 amountB);
+
+    /// @notice Emitted when liquidity is removed from the pool.
+    event LiquidityRemoved(uint256 amountA, uint256 amountB);
+
+    /// @notice Emitted when tokens are swapped in the pool.
+    event TokensSwapped(
+        address indexed user,
+        uint256 amountIn,
+        uint256 amountOut,
+        string direction
+    );
+
+    /**
+     * @dev Initializes the contract with the two token addresses and sets the contract deployer as the owner.
+     * @param _tokenA Address of the first token.
+     * @param _tokenB Address of the second token.
+     */
     constructor(address _tokenA, address _tokenB) {
-        tokenA = IERC20(_tokenA); // Assigning tokenA address.
-        tokenB = IERC20(_tokenB); // Assigning tokenB address.
-        owner = msg.sender; // Setting the contract deployer as the owner.
+        require(_tokenA != _tokenB, "Tokens must be different");
+        tokenA = IERC20(_tokenA);
+        tokenB = IERC20(_tokenB);
+        owner = msg.sender;
     }
 
-    // Modifier to restrict certain functions to only the owner of the contract.
+    /// @dev Modifier to restrict access to only the owner of the contract.
     modifier onlyOwner() {
-        require(msg.sender == owner, "Not the owner"); // Ensuring the caller is the owner.
+        require(msg.sender == owner, "Not the owner");
         _;
     }
 
-    // Function to add liquidity to the pool by depositing token A and token B in specified amounts.
+    /**
+     * @notice Adds liquidity to the pool.
+     * @dev Requires the sender to be the owner and maintains reserve ratios.
+     * @param amountA Amount of token A to add.
+     * @param amountB Amount of token B to add.
+     */
     function addLiquidity(uint256 amountA, uint256 amountB) external onlyOwner {
-        require(amountA > 0 && amountB > 0, "Invalid amounts"); // Ensuring valid amounts.
+        require(amountA > 0 && amountB > 0, "Invalid amounts");
 
-        // If the pool already has reserves, the added amounts must maintain the same ratio.
         if (reserveA > 0 && reserveB > 0) {
             require(amountA * reserveB == amountB * reserveA, "Invalid ratio");
         }
 
-        // Transferring tokens from the owner's address to the contract.
         tokenA.transferFrom(msg.sender, address(this), amountA);
         tokenB.transferFrom(msg.sender, address(this), amountB);
 
-        // Updating reserves.
         reserveA += amountA;
         reserveB += amountB;
 
-        emit LiquidityAdded(amountA, amountB); // Emitting the liquidity added event.
+        emit LiquidityAdded(amountA, amountB);
     }
 
-    // Function to swap token A for token B.
+    /**
+     * @notice Swaps token A for token B.
+     * @dev Uses a constant product formula for calculating the output amount.
+     * @param amountAIn Amount of token A to swap.
+     */
     function swapAforB(uint256 amountAIn) external {
-        require(amountAIn > 0, "Invalid amount"); // Ensuring a valid input amount.
-        require(reserveA > 0 && reserveB > 0, "Pool is empty"); // Ensuring the pool is not empty.
+        require(amountAIn > 0, "Invalid amount");
+        require(reserveA > 0 && reserveB > 0, "Pool is empty");
 
-        // Calculating the amount of token B to be given out using a simple constant product formula.
         uint256 amountBOut = (reserveB * amountAIn) / (reserveA + amountAIn);
-        require(amountBOut > 0, "Insufficient output amount"); // Ensuring the output amount is valid.
+        require(amountBOut > 0, "Insufficient output amount");
 
-        // Transferring token A from the user to the contract and token B from the contract to the user.
         tokenA.transferFrom(msg.sender, address(this), amountAIn);
         tokenB.transfer(msg.sender, amountBOut);
 
-        // Updating reserves.
         reserveA += amountAIn;
         reserveB -= amountBOut;
 
-        emit TokensSwapped(msg.sender, amountAIn, amountBOut, "A to B"); // Emitting the swap event.
+        emit TokensSwapped(msg.sender, amountAIn, amountBOut, "A to B");
     }
 
-    // Function to swap token B for token A.
+    /**
+     * @notice Swaps token B for token A.
+     * @dev Uses a constant product formula for calculating the output amount.
+     * @param amountBIn Amount of token B to swap.
+     */
     function swapBforA(uint256 amountBIn) external {
-        require(amountBIn > 0, "Invalid amount"); // Ensuring a valid input amount.
-        require(reserveA > 0 && reserveB > 0, "Pool is empty"); // Ensuring the pool is not empty.
+        require(amountBIn > 0, "Invalid amount");
+        require(reserveA > 0 && reserveB > 0, "Pool is empty");
 
-        // Calculating the amount of token A to be given out using a simple constant product formula.
         uint256 amountAOut = (reserveA * amountBIn) / (reserveB + amountBIn);
-        require(amountAOut > 0, "Insufficient output amount"); // Ensuring the output amount is valid.
+        require(amountAOut > 0, "Insufficient output amount");
 
-        // Transferring token B from the user to the contract and token A from the contract to the user.
         tokenB.transferFrom(msg.sender, address(this), amountBIn);
         tokenA.transfer(msg.sender, amountAOut);
 
-        // Updating reserves.
         reserveB += amountBIn;
         reserveA -= amountAOut;
 
-        emit TokensSwapped(msg.sender, amountBIn, amountAOut, "B to A"); // Emitting the swap event.
+        emit TokensSwapped(msg.sender, amountBIn, amountAOut, "B to A");
     }
 
-    // Function to remove liquidity from the pool, transferring the specified amounts back to the owner.
+    /**
+     * @notice Removes liquidity from the pool.
+     * @dev Only the owner can remove liquidity.
+     * @param amountA Amount of token A to withdraw.
+     * @param amountB Amount of token B to withdraw.
+     */
     function removeLiquidity(uint256 amountA, uint256 amountB) external onlyOwner {
-        require(amountA > 0 && amountB > 0, "Invalid amounts"); // Ensuring valid amounts.
-        require(reserveA >= amountA && reserveB >= amountB, "Not enough liquidity"); // Ensuring sufficient reserves.
+        require(amountA > 0 && amountB > 0, "Invalid amounts");
+        require(reserveA >= amountA && reserveB >= amountB, "Not enough liquidity");
 
-        // Updating reserves.
         reserveA -= amountA;
         reserveB -= amountB;
 
-        // Transferring tokens back to the owner.
         tokenA.transfer(msg.sender, amountA);
         tokenB.transfer(msg.sender, amountB);
 
-        emit LiquidityRemoved(amountA, amountB); // Emitting the liquidity removed event.
+        emit LiquidityRemoved(amountA, amountB);
     }
 
-    // Function to get the price of one token in terms of the other, based on the reserves.
+    /**
+     * @notice Gets the price of a token in terms of the other token.
+     * @param _token Address of the token to price.
+     * @return Price of 1 unit of the specified token in terms of the other token.
+     */
     function getPrice(address _token) external view returns (uint256) {
-        require(_token == address(tokenA) || _token == address(tokenB), "Invalid token"); // Ensuring a valid token.
+        require(_token == address(tokenA) || _token == address(tokenB), "Invalid token");
 
-        // Calculating the price of token A in terms of token B, or vice versa.
         if (_token == address(tokenA)) {
-            return (reserveB * 1e18) / reserveA; // Price of 1 token A in terms of token B.
-        } else {
-            return (reserveA * 1e18) / reserveB; // Price of 1 token B in terms of token A.
-        }
+            return (reserveB * 1e18) / reserveA; // Token A price in terms of token B
+        } 
+        return (reserveA * 1e18) / reserveB; // Token B price in terms of token A
     }
 }
